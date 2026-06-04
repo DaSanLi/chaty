@@ -2,16 +2,14 @@
 import { FastifyPluginAsync } from 'fastify'
 import type { FastifyRequest } from 'fastify'
 import type { WebSocket } from 'ws'
+import { ChatService } from './service';
 
 const chat: FastifyPluginAsync = async ( fastify, opts ): Promise<void> => {
-
+    const chatService = new ChatService()
 
     fastify.get('/', {websocket: true}, (socket: WebSocket, req: FastifyRequest) => { 
         socket.on('message', (message: Buffer) => {
-            // message from frontend
-            const messageTransform = message.toString();
-            console.log(`recibí el siguiente mensaje: ${messageTransform}`)
-            socket.send("hi from server")
+            chatService.onMessage(socket, message)
         })
 
         socket.on('close', (code, reason)=>{
