@@ -21,9 +21,11 @@ const createMockServer = () =>
  * - join(room) adds to the set
  * - leave(room) removes from the set
  * - client.rooms reflects the Set (used by handleDisconnect to iterate)
+ * - client.to(room) returns { emit } for broadcast (excludes sender)
  */
 const createMockClient = (id = 'test-socket-id') => {
   const rooms = new Set<string>([id]); // socket.io auto-adds own id as default room
+  const broadcastEmit = jest.fn();
 
   return {
     id,
@@ -37,6 +39,8 @@ const createMockClient = (id = 'test-socket-id') => {
       rooms.delete(room);
     }),
     emit: jest.fn(),
+    /** client.to(room) = client.broadcast.to(room) — excludes sender */
+    to: jest.fn().mockReturnValue({ emit: broadcastEmit }),
   } as unknown as Socket;
 };
 
@@ -60,6 +64,9 @@ describe('RoomsGateway', () => {
     mockServer = createMockServer();
     gateway.server = mockServer;
 
+    // Initialize namespaceServer (used by handleDisconnect for namespace-scoped broadcast)
+    gateway.afterInit(mockServer);
+
     // Fresh client for each test
     mockClient = createMockClient();
   });
@@ -73,8 +80,10 @@ describe('RoomsGateway', () => {
   // ── Lifecycle ───────────────────────────────────
 
   describe('afterInit', () => {
-    it('should log initialization message', () => {
-      expect(() => gateway.afterInit(mockServer)).not.toThrow();
+    it('should store the namespace server and log initialization', () => {
+      const server = createMockServer();
+      gateway.afterInit(server);
+      expect((gateway as any).namespaceServer).toBe(server);
     });
   });
 
@@ -96,7 +105,7 @@ describe('RoomsGateway', () => {
 
       await gateway.handleDisconnect(mockClient);
 
-      // Verify broadcasts
+      // Verify broadcasts via namespaceServer (same as mockServer since we called afterInit(mockServer))
       expect(mockServer.to).toHaveBeenCalledWith('lobby');
       expect(mockServer.to).toHaveBeenCalledWith('general');
       expect(mockServer.emit).toHaveBeenCalledTimes(4); // userLeft + roomUsers per room
@@ -112,7 +121,7 @@ describe('RoomsGateway', () => {
   describe('handleJoinRoom', () => {
     const dto: JoinRoomDto = { room: 'lobby', username: 'Alice' };
 
-    it('should join client to a room and broadcast events', async () => {
+    it('should join client to a room and broadcast to others', async () => {
       await gateway.handleJoinRoom(dto, mockClient);
 
       // Verify socket joined
@@ -122,16 +131,21 @@ describe('RoomsGateway', () => {
       expect(roomsService.getUsersInRoom('lobby')).toHaveLength(1);
       expect(roomsService.getUsersInRoom('lobby')[0].username).toBe('Alice');
 
-      // Verify broadcasts
-      expect(mockServer.to).toHaveBeenCalledWith('lobby');
-      expect(mockServer.emit).toHaveBeenCalledWith(
+      // Verify broadcasts to OTHER clients (excludes sender via client.to)
+      expect(mockClient.to).toHaveBeenCalledWith('lobby');
+      const broadcastEmit = (mockClient.to as jest.Mock).mock.results[0]
+        .value.emit;
+      expect(broadcastEmit).toHaveBeenCalledWith(
         'userJoined',
         expect.objectContaining({ username: 'Alice' }),
       );
-      expect(mockServer.emit).toHaveBeenCalledWith(
+      expect(broadcastEmit).toHaveBeenCalledWith(
         'roomUsers',
         expect.objectContaining({ room: 'lobby' }),
       );
+
+      // server-level emit should NOT be called (broadcast is client.to, not server.to)
+      expect(mockServer.emit).not.toHaveBeenCalled();
     });
 
     it('should throw WsException if already in the room', async () => {
@@ -150,21 +164,27 @@ describe('RoomsGateway', () => {
     const joinDto: JoinRoomDto = { room: 'lobby', username: 'Alice' };
     const msgDto: SendMessageDto = { room: 'lobby', content: 'Hello!' };
 
-    it('should broadcast message to room', async () => {
+    it('should broadcast message to other clients in room', async () => {
       // Setup: join first
       await gateway.handleJoinRoom(joinDto, mockClient);
       jest.clearAllMocks();
 
       await gateway.handleSendMessage(msgDto, mockClient);
 
-      expect(mockServer.to).toHaveBeenCalledWith('lobby');
-      expect(mockServer.emit).toHaveBeenCalledWith(
+      // Broadcast via client.to (excludes sender)
+      expect(mockClient.to).toHaveBeenCalledWith('lobby');
+      const broadcastEmit = (mockClient.to as jest.Mock).mock.results[0]
+        .value.emit;
+      expect(broadcastEmit).toHaveBeenCalledWith(
         'newMessage',
         expect.objectContaining({
           username: 'Alice',
           content: 'Hello!',
         }),
       );
+
+      // server-level emit should NOT be called
+      expect(mockServer.emit).not.toHaveBeenCalled();
     });
 
     it('should throw WsException if not in room', async () => {
@@ -179,7 +199,7 @@ describe('RoomsGateway', () => {
   describe('handleLeaveRoom', () => {
     const dto: LeaveRoomDto = { room: 'lobby' };
 
-    it('should leave room and broadcast departure', async () => {
+    it('should leave room and broadcast departure to others', async () => {
       // Setup: join first
       await gateway.handleJoinRoom(
         { room: 'lobby', username: 'Alice' },
@@ -195,12 +215,21 @@ describe('RoomsGateway', () => {
       // Verify tracking
       expect(roomsService.getUsersInRoom('lobby')).toHaveLength(0);
 
-      // Verify broadcasts
-      expect(mockServer.to).toHaveBeenCalledWith('lobby');
-      expect(mockServer.emit).toHaveBeenCalledWith(
+      // Broadcast via client.to (excludes sender, i.e. the leaving user)
+      expect(mockClient.to).toHaveBeenCalledWith('lobby');
+      const broadcastEmit = (mockClient.to as jest.Mock).mock.results[0]
+        .value.emit;
+      expect(broadcastEmit).toHaveBeenCalledWith(
         'userLeft',
         expect.objectContaining({ username: 'Alice' }),
       );
+      expect(broadcastEmit).toHaveBeenCalledWith(
+        'roomUsers',
+        expect.objectContaining({ room: 'lobby' }),
+      );
+
+      // server-level emit should NOT be called
+      expect(mockServer.emit).not.toHaveBeenCalled();
     });
   });
 

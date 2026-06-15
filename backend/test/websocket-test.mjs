@@ -9,15 +9,15 @@
  *
  * Requiere: socket.io-client (npm install --save-dev socket.io-client)
  *
- * Escenarios probados:
+ * Comportamiento verificado (client.to(room) — excluye al emisor):
  *   1. Conexión al namespace /rooms
- *   2. Unirse a una sala
- *   3. Broadcast multi-cliente (userJoined)
- *   4. Enviar y recibir mensaje (newMessage)
- *   5. Listar salas activas (getRooms)
- *   6. Salir de sala (userLeft broadcast)
+ *   2. Unirse a una sala (verifica vía getRooms ACK — el emisor no recibe eco)
+ *   3. Broadcast multi-cliente (userJoined, roomUsers — los reciben los demás)
+ *   4. Enviar mensaje (solo los demás reciben newMessage)
+ *   5. Listar salas activas (getRooms via ACK)
+ *   6. Salir de sala (userLeft broadcast a los que quedan)
  *   7. Payload inválido → evento error
- *   8. Desconexión limpia (userLeft + cleanup)
+ *   8. Desconexión limpia
  */
 
 import { io } from 'socket.io-client';
@@ -26,7 +26,7 @@ import { io } from 'socket.io-client';
 
 const SERVER_URL = 'http://localhost:3000';
 const NAMESPACE = '/rooms';
-const WAIT_MS = 1500; // tiempo de espera entre pasos
+const WAIT_MS = 1200; // tiempo de espera entre pasos
 
 // ── Helpers ───────────────────────────────────────
 
@@ -47,6 +47,21 @@ const waitForEvent = (socket, event, timeoutMs = 5000) =>
       clearTimeout(timer);
       socket.off(event, handler);
       resolve(data);
+    };
+    socket.once(event, handler);
+  });
+
+/** Verifica que un evento NO sea recibido en un tiempo dado */
+const assertNoEvent = (socket, event, timeoutMs = 1500) =>
+  new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      socket.off(event, handler);
+      resolve(true); // no event received = good
+    }, timeoutMs);
+    const handler = () => {
+      clearTimeout(timer);
+      socket.off(event, handler);
+      resolve(false); // event received = bad
     };
     socket.once(event, handler);
   });
@@ -79,7 +94,8 @@ async function main() {
   console.log('\n╔══════════════════════════════════════╗');
   console.log('║  Chaty WebSocket Verification Suite ║');
   console.log('╚══════════════════════════════════════╝\n');
-  console.log(`Server: ${SERVER_URL}${NAMESPACE}\n`);
+  console.log(`Server: ${SERVER_URL}${NAMESPACE}`);
+  console.log('Mode:  client.to(room) → excludes sender\n');
 
   // ── Crear dos clientes ────────────────
 
@@ -101,18 +117,20 @@ async function main() {
     ]);
   });
 
-  // ── Test 2: Unirse a sala (C1) ───────
+  // ── Test 2: C1 se une a sala ──────────
+  // Con client.to(room), el emisor NO recibe userJoined ni roomUsers de su propio join.
+  // Verificamos la sala fue creada vía getRooms ACK.
 
   await step('Join room "test-chaty" (Client 1)', async () => {
-    const joinPromise = waitForEvent(client1, 'userJoined');
     client1.emit('joinRoom', { room: 'test-chaty', username: 'Tester1' });
-    const data = await joinPromise;
-    test('userJoined contains correct username', data.username === 'Tester1');
+    await sleep(WAIT_MS);
+    const data = await client1.emitWithAck('getRooms');
+    test('Room "test-chaty" exists after join', data.rooms?.includes('test-chaty'));
   });
 
   await sleep(WAIT_MS);
 
-  // ── Test 3: C2 se une → C1 ve userJoined
+  // ── Test 3: C2 se une → C1 recibe userJoined y roomUsers
 
   await step('Client 2 joins → Client 1 receives userJoined', async () => {
     const joinPromise = waitForEvent(client1, 'userJoined');
@@ -121,18 +139,27 @@ async function main() {
     test('Client 1 sees Client 2 joining', data.username === 'Tester2');
   });
 
+  await step('Client 2 joins → Client 1 receives roomUsers', async () => {
+    const roomUsersPromise = waitForEvent(client1, 'roomUsers');
+    client2.emit('joinRoom', { room: 'test-chaty-another', username: 'Tester2' });
+    const data = await roomUsersPromise;
+    test('roomUsers contains 2 users', data.users?.length === 2);
+  });
+
+  // C2 leaves the extra room to keep state clean
+  client2.emit('leaveRoom', { room: 'test-chaty-another' });
   await sleep(WAIT_MS);
 
-  // ── Test 4: C1 envía mensaje → ambos reciben
+  // ── Test 4: C1 envía mensaje → SOLO C2 recibe (C1 excluido)
 
-  await step('Client 1 sends message → both receive newMessage', async () => {
-    const msgPromise1 = waitForEvent(client1, 'newMessage');
-    const msgPromise2 = waitForEvent(client2, 'newMessage');
+  await step('Client 1 sends message → only Client 2 receives', async () => {
+    const msgPromise = waitForEvent(client2, 'newMessage');
+    const noMsg = assertNoEvent(client1, 'newMessage', 2000);
     client1.emit('sendMessage', { room: 'test-chaty', content: 'Hello from Tester1!' });
 
-    const [data1, data2] = await Promise.all([msgPromise1, msgPromise2]);
-    test('Client 1 receives own message (echo)', data1.content === 'Hello from Tester1!');
-    test('Client 2 receives message from Client 1', data2.content === 'Hello from Tester1!');
+    const [data, senderExcluded] = await Promise.all([msgPromise, noMsg]);
+    test('Client 2 receives message from Client 1', data.content === 'Hello from Tester1!');
+    test('Client 1 does NOT receive echo of own message', senderExcluded === true);
   });
 
   await sleep(WAIT_MS);
@@ -161,7 +188,7 @@ async function main() {
   // ── Test 7: Enviar datos inválidos → error
 
   await step('Invalid payload → error event', async () => {
-    // Enviar sin los campos requeridos (room vacío, username corto)
+    // room demasiado corto (minLength: 3), content vacío
     client1.emit('sendMessage', { room: 'xx', content: '' });
     const data = await waitForEvent(client1, 'error');
     test('Error event received for invalid data', typeof data.message === 'string');
@@ -173,8 +200,6 @@ async function main() {
 
   await step('Client 1 disconnects → cleanup', async () => {
     client1.disconnect();
-    // El servidor emite userLeft a los que quedan — como C2 ya salió,
-    // verificamos que C1 se desconecta sin errores
     await sleep(1000);
     test('Client 1 disconnected without errors', !client1.connected);
   });
@@ -191,7 +216,8 @@ async function main() {
 
   if (failed === 0) {
     console.log('\n🎉 WebSocket server: OPERATIONAL');
-    console.log('🔌 Any client can connect: CONFIRMED\n');
+    console.log('🔌 Any client can connect: CONFIRMED');
+    console.log('📡 Broadcast (client.to) — sender excluded: CONFIRMED\n');
   } else {
     console.log(`\n⚠️  ${failed} test(s) failed. Review errors above.\n`);
     process.exit(1);

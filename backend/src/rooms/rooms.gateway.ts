@@ -23,7 +23,7 @@ import { WsExceptionFilter } from './filters/ws-exception.filter';
  * Architecture:
  * - Uses Socket.IO "rooms" as the underlying pub/sub mechanism.
  * - socket.join(roomName) → subscribes client to room events.
- * - server.to(roomName).emit(event, data) → broadcasts to all room members.
+ * - client.to(roomName).emit(event, data) → broadcasts to room members (excludes sender).
  * - In-memory RoomsService tracks usernames and room metadata.
  *
  * Lifecycle (OnGatewayInit → OnGatewayConnection → handlers → OnGatewayDisconnect):
@@ -46,6 +46,13 @@ export class RoomsGateway
   @WebSocketServer()
   server!: Server;
 
+  /**
+   * Reference to the namespace server (saved from afterInit).
+   * Used in handleDisconnect where the client socket is no longer reliable for broadcast.
+   * This guarantees broadcasts stay scoped to the /rooms namespace.
+   */
+  private namespaceServer!: Server;
+
   private readonly logger = new Logger(RoomsGateway.name);
 
   constructor(private readonly roomsService: RoomsService) {}
@@ -56,7 +63,8 @@ export class RoomsGateway
    * Called once when the WebSocket server initializes.
    * `server` is the native Socket.IO Server instance.
    */
-  afterInit(_server: Server): void {
+  afterInit(server: Server): void {
+    this.namespaceServer = server;
     this.logger.log('WebSocket RoomsGateway initialized on namespace /rooms');
   }
 
@@ -87,14 +95,14 @@ export class RoomsGateway
 
       const username = this.roomsService.getUsername(client.id, room);
 
-      // Broadcast userLeft to remaining room members
-      this.server.to(room).emit('userLeft', {
+      // Broadcast userLeft to remaining room members (namespace-scoped)
+      this.namespaceServer.to(room).emit('userLeft', {
         username: username ?? 'Unknown',
         timestamp: new Date().toISOString(),
       });
 
       // Broadcast updated user list
-      this.server.to(room).emit('roomUsers', {
+      this.namespaceServer.to(room).emit('roomUsers', {
         room,
         users: this.roomsService.getUsersInRoom(room),
       });
@@ -137,14 +145,14 @@ export class RoomsGateway
     // Track user in our in-memory service
     this.roomsService.addUser(dto.room, client.id, dto.username);
 
-    // Notify all room members (including the new user)
-    this.server.to(dto.room).emit('userJoined', {
+    // Notify other room members (excludes the joining user)
+    client.to(dto.room).emit('userJoined', {
       username: dto.username,
       timestamp: new Date().toISOString(),
     });
 
-    // Broadcast updated user list to the room
-    this.server.to(dto.room).emit('roomUsers', {
+    // Broadcast updated user list to other room members
+    client.to(dto.room).emit('roomUsers', {
       room: dto.room,
       users: this.roomsService.getUsersInRoom(dto.room),
     });
@@ -158,8 +166,8 @@ export class RoomsGateway
    * Send a message to a room.
    *
    * Client sends: { room: string, content: string }
-   * - Message is broadcast to ALL clients in the room (including sender).
-   * - Use client.broadcast.to(room) instead of server.to(room) to exclude sender.
+   * - Message is broadcast to OTHER clients in the room (excludes sender).
+   * - Frontend should use optimistic UI to display the sent message immediately.
    */
   @SubscribeMessage('sendMessage')
   @UsePipes(
@@ -182,8 +190,8 @@ export class RoomsGateway
       );
     }
 
-    // Broadcast to all members of the room
-    this.server.to(dto.room).emit('newMessage', {
+    // Broadcast to other members of the room (excludes sender)
+    client.to(dto.room).emit('newMessage', {
       username,
       content: dto.content,
       timestamp: new Date().toISOString(),
@@ -218,16 +226,16 @@ export class RoomsGateway
     // Remove from in-memory tracking
     this.roomsService.removeUser(dto.room, client.id);
 
-    // Notify remaining members
+    // Notify remaining members (excludes the leaving user)
     if (username) {
-      this.server.to(dto.room).emit('userLeft', {
+      client.to(dto.room).emit('userLeft', {
         username,
         timestamp: new Date().toISOString(),
       });
     }
 
-    // Broadcast updated user list
-    this.server.to(dto.room).emit('roomUsers', {
+    // Broadcast updated user list to remaining members
+    client.to(dto.room).emit('roomUsers', {
       room: dto.room,
       users: this.roomsService.getUsersInRoom(dto.room),
     });
