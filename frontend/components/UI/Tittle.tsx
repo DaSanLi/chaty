@@ -1,0 +1,1 @@
+// describe el conjunto de etiquetas <h1> hasta <h6>
