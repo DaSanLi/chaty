@@ -206,8 +206,11 @@ components/
 │   ├── Title.tsx
 │   ├── Anchor.tsx
 │   ├── Icon.tsx
-│   ├── Select.tsx
+│   ├── Select.tsx    ← ✅ IMPLEMENTED
 │   └── Form.tsx
+├── Theme/        <- THEME DOMAIN: molecules + config
+│   ├── ThemeProvider.tsx             ← ✅ IMPLEMENTED
+│   └── ThemeSwitcherComponent.tsx    ← ✅ IMPLEMENTED
 ├── Chat.tsx      <- MOLECULE: composes atoms
 ├── Room.tsx      <- MOLECULE: composes atoms
 └── ...           <- ORGANISMS: pages, layouts
@@ -217,6 +220,7 @@ components/
 
 ```tsx
 import type { ComponentPropsWithoutRef, ReactNode } from 'react';
+import { cn } from '@/lib/utils/cn';
 
 // 1. Props interface with Readonly<T>, extending native element props
 type ButtonProps = Readonly<{
@@ -226,14 +230,14 @@ type ButtonProps = Readonly<{
 
 // 2. Server Component by default (no "use client" unless necessary)
 // 3. Use Tailwind classes, never inline styles
+// 4. Use cn() for class merging — user overrides win over base classes
 export function Button({
   children,
   variant = 'primary',
-  className = '',
+  className,
   type = 'button',
   ...props
 }: ButtonProps) {
-  const baseClasses = 'inline-flex items-center justify-center rounded-full font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2';
   const variantClasses = {
     primary: 'bg-foreground text-background hover:bg-foreground/90',
     secondary: 'border border-foreground/10 hover:bg-foreground/5',
@@ -243,7 +247,12 @@ export function Button({
   return (
     <button
       type={type}
-      className={`${baseClasses} ${variantClasses[variant]} ${className}`}
+      className={cn(
+        'inline-flex items-center justify-center rounded-full font-medium transition-colors',
+        'focus-visible:outline-2 focus-visible:outline-offset-2',
+        variantClasses[variant],
+        className
+      )}
       {...props}
     >
       {children}
@@ -251,6 +260,30 @@ export function Button({
   );
 }
 ```
+
+### `cn()` Utility — Class Merging Standard
+
+All atoms MUST use `cn()` (not template literals) for merging classes.
+It combines `clsx` (conditional joining) + `tailwind-merge` (conflict resolution).
+
+```tsx
+import { cn } from '@/lib/utils/cn';
+
+// ❌ Wrong: template literal — no conflict resolution
+className={`base-classes ${className ?? ''}`}
+
+// ✅ Correct: cn() — user overrides always win
+className={cn('base-classes', 'more-base-classes', className)}
+```
+
+**What `cn()` does:**
+- Joins classes conditionally (ignores `undefined`, `false`, `null`)
+- Resolves Tailwind conflicts: `cn('bg-background', 'bg-red-500')` → `'bg-red-500'`
+- Ensures `className` from the user always takes priority over base classes
+
+**Location:** `lib/utils/cn.ts` (3 lines)
+
+**Dependencies:** `clsx` (300B) + `tailwind-merge` (3KB)
 
 ### Atom Inventory & Conventions
 
@@ -262,7 +295,7 @@ export function Button({
 | `Button` | `ComponentPropsWithoutRef<'button'>` | `variant`, `children` | Always `type="button"` by default (not submit). |
 | `Input` | `ComponentPropsWithoutRef<'input'>` | `label` (required) | Wraps `<label>` + `<input>` together. |
 | `Icon` | `ComponentPropsWithoutRef<'span'>` | `name`, `size` | Renders SVG icon by name. `aria-hidden="true"`. |
-| `Select` | `ComponentPropsWithoutRef<'select'>` | `label` (required), `options` | Wraps `<label>` + `<select>`. Options: `{value, label}[]`. |
+| `Select` | `ComponentPropsWithoutRef<'select'>` | `label` (required), `options` | ✅ IMPLEMENTED. Wraps `<label>` + `<select>`. Options: `{value, label}[]`. |
 | `Form` | `ComponentPropsWithoutRef<'form'>` | `action`, `children` | Native `<form>` wrapper. Supports server action via `action={}` prop. No `method` override needed — Next.js handles it. |
 
 ### Composition Rules
@@ -558,41 +591,128 @@ useEffect(() => {
 
 ## 6. Theme System Integration
 
-### Reference to chaty-themes
+### Architecture
 
-This skill integrates with the **chaty-themes** skill (created separately). Themes are applied via CSS custom properties consumed through Tailwind CSS 4 `@theme` tokens.
+The theme system is fully implemented in `components/Theme/` and `app/globals.css`.
+See [chaty-themes](../chaty-themes/SKILL.md) for the complete specification.
+
+```
+data-theme attr → CSS custom properties → @theme inline → Tailwind utilities
+       ↑                    ↑
+  next-themes          globals.css
+  (React Context)      (3 palettes + mapping)
+```
+
+### File Structure
+
+```
+components/
+├── Theme/
+│   ├── ThemeProvider.tsx              ← Wrapper around next-themes (Client Component)
+│   └── ThemeSwitcherComponent.tsx     ← Molecule: useTheme() + <Select> atom
+└── UI/
+    └── Select.tsx                     ← Atom: reusable <select> component
+
+app/
+├── globals.css                        ← @theme inline + 3 palettes + @custom-variant
+└── layout.tsx                         ← ThemeProvider + suppressHydrationWarning + anti-flash script
+```
 
 ### How Components Consume Theme Colors
 
 ```tsx
-// Correct: Use Tailwind theme tokens
-<button className="bg-foreground text-background">Send</button>
+// Correct: Use semantic Tailwind theme tokens
+<button className="bg-primary text-primary-foreground rounded-lg px-4 py-2">
+  Send
+</button>
 
-// Wrong: Hardcoded hex values
-<button className="bg-[#171717] text-[#ffffff]">Send</button>
+// Correct: use status tokens
+<span className="text-success">● Connected</span>
+<span className="text-error">● Disconnected</span>
+
+// Wrong: Hardcoded values
+<button className="bg-[#2563eb] text-[#ffffff]">Send</button>
 ```
 
-### Theme-Aware Classes
+### Theme Tokens (from @theme inline)
 
-```css
-/* globals.css — theme tokens reference */
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+All components use semantic tokens — never hardcoded colors:
+
+| Token (Tailwind) | CSS Variable | Category |
+|-----------------|-------------|----------|
+| `bg-background` / `text-foreground` | `var(--background)` / `var(--foreground)` | Surface |
+| `bg-card` / `text-card-foreground` | `var(--card)` / `var(--card-foreground)` | Elevated |
+| `bg-primary` / `text-primary-foreground` | `var(--primary)` / `var(--primary-foreground)` | Accent |
+| `bg-secondary` / `text-secondary-foreground` | `var(--secondary)` / `var(--secondary-foreground)` | Secondary |
+| `bg-muted` / `text-muted-foreground` | `var(--muted)` / `var(--muted-foreground)` | Subtle |
+| `bg-accent` / `text-accent-foreground` | `var(--accent)` / `var(--accent-foreground)` | Interactive |
+| `text-success` / `text-warning` / `text-error` | `var(--success)` / etc. | Status |
+| `border-border` / `ring-ring` | `var(--border)` / `var(--ring)` | Decor |
+| `rounded-lg` | `var(--radius)` | Radius |
+
+### Theme Switching Flow
+
+```
+User clicks ThemeSwitcherComponent
+        │
+        ▼
+setTheme('midnight')
+        │
+   ┌────┼────────────┐
+   ▼    ▼            ▼
+Context  localStorage  <html data-theme="midnight">
+update   persist       │
+                       ▼
+              CSS: [data-theme="midnight"] activates
+              --primary: #6366f1, --background: #0f172a
+                       │
+                       ▼
+              All components re-render with new values
+```
+
+### Theme Switcher Component
+
+```tsx
+// components/Theme/ThemeSwitcherComponent.tsx
+'use client';
+import { useTheme } from 'next-themes';
+import { useEffect, useState } from 'react';
+import { Select } from '@/components/UI/Select';
+
+const THEME_OPTIONS = [
+  { value: 'light',    label: '☀️ Claro' },
+  { value: 'dark',     label: '🌙 Oscuro' },
+  { value: 'midnight', label: '🌑 Midnight' },
+  { value: 'system',   label: '💻 Sistema' },
+] as const;
+
+export function ThemeSwitcherComponent() {
+  const { theme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
+
+  if (!mounted) {
+    return <div className="w-40 h-9 animate-pulse rounded-md bg-muted" />;
+  }
+
+  return (
+    <Select
+      label="Tema"
+      value={theme ?? 'system'}
+      onChange={(e) => setTheme(e.target.value)}
+      options={THEME_OPTIONS}
+    />
+  );
 }
 ```
 
-### Theme Switching
+### Rules
 
-Theme switching is handled by `chaty-themes` via `data-theme` attribute on `<html>`:
-
-```html
-<html data-theme="midnight">
-```
-
-Components are theme-agnostic — they only consume `--color-background`, `--color-foreground`, etc. The actual palette values are defined in `chaty-themes`.
-
-**Do NOT hardcode theme-specific colors in components.**
+- Components are theme-agnostic — only consume semantic Tailwind theme tokens
+- **Do NOT hardcode theme-specific colors** (no `bg-[#2563eb]`, no `text-white`)
+- Use `dark:` variant for exceptions that need explicit dark-mode overrides
+- Theme switching logic lives in `components/Theme/` (molecules), not in atoms
 
 ---
 
@@ -791,8 +911,21 @@ frontend/
 │
 ├── components/                   ← 🧩 React components
 │   ├── UI/                       ← Atoms (presentational, no business logic)
+│   │   ├── Button.tsx            ← <button> proxy
+│   │   ├── Select.tsx            ← <label> + <select> wrapper
+│   │   ├── Input.tsx             ← <label> + <input> wrapper
+│   │   └── ...
+│   ├── Theme/                    ← Theme domain (molecules + config)
+│   │   ├── ThemeProvider.tsx      ← next-themes wrapper (Client Component)
+│   │   └── ThemeSwitcherComponent.tsx ← useTheme() + <Select>
 │   ├── Chat.tsx                  ← Molecules
 │   └── Room.tsx
+│
+├── hooks/                        ← 🪝 Custom hooks (logic only, NO JSX)
+│   ├── useSocket.ts              ← 🔲 Future: Socket.IO lifecycle
+│   ├── useChatMessages.ts        ← 🔲 Future: Message state + useOptimistic
+│   ├── useOnlineStatus.ts        ← 🔲 Future: navigator.onLine
+│   └── useScrollToBottom.ts      ← 🔲 Future: Auto-scroll on new messages
 │
 └── skills/                       ← 📚 Agent skills (this directory)
 ```
@@ -940,6 +1073,124 @@ export function useChatSocket(username: string) {
   // Creates io(), manages lifecycle — implementation detail
   return socketRef.current;
 }
+```
+
+---
+
+## 10. Custom Hooks Convention
+
+### The Rule
+
+`hooks/` contains **ONLY** custom hooks — functions prefixed with `use` that
+encapsulate reusable logic. They **NEVER** return JSX.
+
+| Location | What belongs | What does NOT belong |
+|----------|-------------|---------------------|
+| `hooks/` | `useSocket()`, `useDebounce()`, `useOnlineStatus()` | Components, JSX, UI markup |
+| `components/` | Functions that return JSX (may use hooks internally) | Pure logic without UI |
+
+### Why This Separation
+
+1. **Reusability**: Hooks can be used across multiple components without duplicating logic
+2. **Testability**: Pure logic can be unit-tested independently of the DOM
+3. **Single Responsibility**: Components render UI, hooks manage state/lifecycle
+4. **Tree-shaking**: Unused hooks don't add to bundle size
+
+### Community Reference
+
+This convention is followed by:
+
+| Project | Pattern |
+|---------|---------|
+| **shadcn/ui** (117k ⭐) | `hooks/` = logic only, `components/ui/` = UI |
+| **React docs** | "Custom Hooks let you reuse stateful logic without changing your component hierarchy" |
+| **cal.com** | `hooks/` for `useRouterQuery`, `useIsomorphicLayoutEffect`, etc. |
+| **next-forge** | `hooks/` for `useWebSocket`, `useMediaQuery`, etc. |
+| **papermark** | Same pattern |
+
+### What Makes a Good Hook
+
+```tsx
+// ✅ Good: Pure logic, reusable, composable
+// hooks/useOnlineStatus.ts
+export function useOnlineStatus() {
+  const [online, setOnline] = useState(navigator.onLine);
+  
+  useEffect(() => {
+    const goOnline = () => setOnline(true);
+    const goOffline = () => setOnline(false);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
+  }, []);
+  
+  return online;
+}
+
+// ❌ Bad: Returns JSX — belongs in components/
+// hooks/ThemeSwitcher.tsx ← NEVER do this
+export function ThemeSwitcher() {
+  return <select>...</select>; // JSX in hooks/ = wrong
+}
+```
+
+### Planned Hooks for Chaty
+
+| Hook | Responsibility | Status |
+|------|---------------|--------|
+| `useSocket(url)` | Socket.IO connection lifecycle management | 🔲 Future |
+| `useChatMessages(socket)` | Message state + `useOptimistic` for sending | 🔲 Future |
+| `useOnlineStatus()` | `navigator.onLine` + online/offline events | 🔲 Future |
+| `useScrollToBottom(deps)` | Auto-scroll chat on new messages (≤150px threshold) | 🔲 Future |
+| `useRoomList(socket)` | Fetch + state for room list via `socket.emitWithAck` | 🔲 Future |
+
+### Hook Template
+
+```tsx
+// hooks/useSocket.ts
+'use client';
+
+import { useEffect, useRef, type RefObject } from 'react';
+import { io, type Socket } from 'socket.io-client';
+
+/**
+ * Manages Socket.IO connection lifecycle.
+ * Returns a RefObject<Socket | null> — never creates socket in SSR.
+ */
+export function useSocket(url: string): RefObject<Socket | null> {
+  const socketRef = useRef<Socket | null>(null);
+
+  useEffect(() => {
+    socketRef.current = io(url);
+    
+    return () => {
+      socketRef.current?.disconnect();
+      socketRef.current = null;
+    };
+  }, [url]);
+
+  return socketRef;
+}
+```
+
+### Anti-Patterns
+
+```tsx
+// ❌ Component in hooks/
+// hooks/ThemeSwitcher.tsx
+export function ThemeSwitcher() { return <div>...</div>; }
+
+// ❌ Hook that returns JSX
+export function useSomething() { return <div>...</div>; }
+
+// ❌ Hook that depends on a specific component
+export function useChatClientMessages(chatClientProps: ChatClientProps) { ... }
+
+// ✅ Hook that returns pure logic
+export function useMessages(socket: Socket | null) { ... }
 ```
 
 ---

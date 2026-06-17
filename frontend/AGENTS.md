@@ -30,6 +30,10 @@ This version has breaking changes — APIs, conventions, and file structure may 
 | Cookie-based auth (MVP) | `httpOnly` cookie for username, backed by `cookies()` API |
 | Zod for validation | Lightweight, tree-shakeable, TypeScript-native — separate from backend class-validator |
 | SOLID principles | Single Responsibility in actions, Dependency Inversion via `lib/services/`, Interface Segregation in props |
+| Theme system | `next-themes` + CSS custom properties + `@theme inline` + `@custom-variant dark` (shadcn/ui pattern) |
+| `components/Theme/` | ThemeProvider wrapper + ThemeSwitcherComponent molecule (see [chaty-themes](skills/chaty-themes/SKILL.md)) |
+| `hooks/` convention | Custom hooks ONLY — logic without JSX. Components with UI live in `components/`. (see [chaty-ux §10](skills/chaty-ux/SKILL.md)) |
+| `cn()` utility | `clsx` + `tailwind-merge` at `lib/utils/cn.ts` — standard class merging. All atoms use `cn()` not template literals. (see [chaty-ux §3](skills/chaty-ux/SKILL.md)) |
 | Skills system | Modular AI guidance for a11y, SEO, UX, perf, server actions, SOLID |
 <!-- END:project-overview -->
 
@@ -45,7 +49,8 @@ When you detect any of these contexts, IMMEDIATELY load the corresponding skill 
 | Context | Skill | File |
 |--------|-------|------|
 | **Chaty frontend**: `components/`, `app/`, chat UI, SSR/RSC decisions, server actions, `actions.ts`, routing structure, SOLID principles, component composition, UX patterns | `chaty-ux` | [skills/chaty-ux/SKILL.md](skills/chaty-ux/SKILL.md) |
-| **Theme system**: dark mode, light mode, midnight theme, color palettes, CSS custom properties, theme switching, ThemeProvider | `chaty-themes` | [skills/chaty-themes/SKILL.md](skills/chaty-themes/SKILL.md) |
+| **Theme system**: dark mode, light mode, midnight theme, color palettes, CSS custom properties, theme switching, ThemeProvider, next-themes, `components/Theme/` | `chaty-themes` | [skills/chaty-themes/SKILL.md](skills/chaty-themes/SKILL.md) |
+| **Custom hooks**: `hooks/` directory, `useSocket`, `useOnlineStatus`, reusable stateful logic, hook conventions | `chaty-ux` §10 | [skills/chaty-ux/SKILL.md](skills/chaty-ux/SKILL.md) |
 
 ### Installed Ecosystem Skills (`~/.agents/skills/`)
 
@@ -152,18 +157,27 @@ page.tsx (Server Component)
 ```
 components/
 ├── UI/              ← Atoms (pure, server components)
-│   ├── Button.tsx   ← <button> proxy, ThemeToken colors
+│   ├── Button.tsx   ← <button> proxy, theme tokens
 │   ├── Input.tsx    ← <label> + <input> wrapper
 │   ├── Text.tsx     ← <p> proxy
 │   ├── Title.tsx    ← Polymorphic h1..h6
 │   ├── Anchor.tsx   ← <a> proxy, external link handling
 │   ├── Icon.tsx     ← SVG icon renderer
-│   ├── Select.tsx   ← <label> + <select> wrapper
+│   ├── Select.tsx   ← ✅ IMPLEMENTED: <label> + <select>
 │   └── Form.tsx     ← <form> wrapper, server action support
+├── Theme/           ← ✅ Theme domain (molecules)
+│   ├── ThemeProvider.tsx            ← next-themes wrapper
+│   └── ThemeSwitcherComponent.tsx   ← useTheme() + <Select>
 ├── Chat.tsx         ← Molecules (compose atoms)
 ├── Room.tsx
 ├── ChatShell.tsx    ← Server Component: semantic structure
 └── ChatClient.tsx   ← Client Component: Socket.IO + state
+
+hooks/               ← Custom hooks (logic only, NO JSX)
+├── useSocket.ts             ← 🔲 Future
+├── useChatMessages.ts       ← 🔲 Future
+├── useOnlineStatus.ts       ← 🔲 Future
+└── useScrollToBottom.ts     ← 🔲 Future
 ```
 
 ### Data Flow & Boundaries
@@ -175,5 +189,5 @@ components/
 | Dashboard actions | Server Actions | `room/dashboard/actions.ts` | `'use server'` → `lib/services/` |
 | Real-time messages | Socket.IO | `ChatClient` (`'use client'`) | `socket.on('newMessage')` |
 | Room list | Socket.IO | `ChatClient` | `socket.emitWithAck('getRooms')` |
-| Theme state | localStorage | Client Component | `data-theme` attribute |
+| Theme state | `next-themes` | `components/Theme/` | `data-theme` attr → CSS vars → `@theme inline` |
 <!-- END:technical-context -->

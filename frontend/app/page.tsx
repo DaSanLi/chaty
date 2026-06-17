@@ -1,3 +1,4 @@
+import { ThemeSwitcherComponent } from "@/components/Theme/ThemeSwitcherComponent";
 import Image from "next/image";
 
 export default function Home() {
