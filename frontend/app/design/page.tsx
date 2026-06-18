@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { Section } from '@/components/Section';
 import { ThemeSwitcherComponent } from '@/components/Theme/ThemeSwitcherComponent';
 import { Button } from '@/components/UI/Button';
 import { Text } from '@/components/UI/Text';
@@ -13,36 +14,6 @@ export const metadata: Metadata = {
   title: 'Design System — Chaty',
   description: 'Visual showcase of all Chaty UI components and theme tokens.',
 };
-
-/* ─── Section wrapper ─── */
-function Section({
-  id,
-  title,
-  description,
-  children,
-}: Readonly<{
-  id: string;
-  title: string;
-  description?: string;
-  children: React.ReactNode;
-}>) {
-  return (
-    <section
-      aria-labelledby={`sec-${id}`}
-      className="rounded-xl border border-border bg-card p-6 sm:p-8"
-    >
-      <Title as="h2" id={`sec-${id}`}>
-        {title}
-      </Title>
-      {description && (
-        <Text size="sm" className="text-muted-foreground mt-1 mb-6">
-          {description}
-        </Text>
-      )}
-      <div className={description ? '' : 'mt-6'}>{children}</div>
-    </section>
-  );
-}
 
 /* ─── Color swatch helper ─── */
 function Swatch({

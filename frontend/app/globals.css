@@ -45,12 +45,12 @@
   --foreground:           #0b0c10; /* Casi negro con toque frío */
   --card:                 #ffffff;
   --card-foreground:      #0b0c10;
-  --primary:              #f000ff; /* Magenta neón brillante */
+  --primary:              #c026d3; /* Fucsia vibrante (AA contrast ≥4.5:1 sobre white) */
   --primary-foreground:   #ffffff;
   --secondary:            #e2e8f0;
   --secondary-foreground: #1e293b;
   --muted:                #e2e8f0;
-  --muted-foreground:     #64748b;
+  --muted-foreground:     #475569; /* slate-600 (AA contrast ≥4.5:1 sobre white) */
   --accent:               #00e5ff; /* Cyan eléctrico para contrastar */
   --accent-foreground:    #000000;
   --destructive:          #ff003c; /* Rojo láser */
