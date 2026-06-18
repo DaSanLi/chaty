@@ -41,6 +41,30 @@
    ═══════════════════════════════════════════════════════════ */
 :root,
 [data-theme="light"] {
+  --background:           #f0f2f5; /* Gris/blanco sintético */
+  --foreground:           #0b0c10; /* Casi negro con toque frío */
+  --card:                 #ffffff;
+  --card-foreground:      #0b0c10;
+  --primary:              #f000ff; /* Magenta neón brillante */
+  --primary-foreground:   #ffffff;
+  --secondary:            #e2e8f0;
+  --secondary-foreground: #1e293b;
+  --muted:                #e2e8f0;
+  --muted-foreground:     #64748b;
+  --accent:               #00e5ff; /* Cyan eléctrico para contrastar */
+  --accent-foreground:    #000000;
+  --destructive:          #ff003c; /* Rojo láser */
+  --success:              #39ff14; /* Verde radioactivo */
+  --warning:              #ffea00; /* Amarillo eléctrico */
+  --error:                #ff003c;
+  --border:               #cbd5e1;
+  --input:                #cbd5e1;
+  --ring:                 #f000ff;
+  --radius:               0.625rem;
+}
+
+   /* :root,
+[data-theme="light"] {
   --background:           #ffffff;
   --foreground:           #171717;
   --card:                 #fafafa;
@@ -61,12 +85,34 @@
   --input:                #e4e4e7;
   --ring:                 #2563eb;
   --radius:               0.625rem;
-}
+} */
 
 /* ═══════════════════════════════════════════════════════════
    TEMA: Dark
    ═══════════════════════════════════════════════════════════ */
 [data-theme="dark"] {
+  --background:           #09090e; /* Asfalto oscuro profundo */
+  --foreground:           #e2f1f8; /* Blanco azulado claro */
+  --card:                 #12121c; /* Contenedores sutilmente más claros */
+  --card-foreground:      #e2f1f8;
+  --primary:              #00f0ff; /* Cyan neón clásico cyberpunk */
+  --primary-foreground:   #000000; /* Texto oscuro para máxima legibilidad en botones neón */
+  --secondary:            #1f1f2e;
+  --secondary-foreground: #ffffff;
+  --muted:                #1f1f2e;
+  --muted-foreground:     #8f9baa;
+  --accent:               #ff0055; /* Rosa/Rojo intenso */
+  --accent-foreground:    #ffffff;
+  --destructive:          #ff2a2a; /* Rojo brillante de alerta */
+  --success:              #00ff66; /* Verde digital */
+  --warning:              #ffcc00; /* Oro neón */
+  --error:                #ff2a2a;
+  --border:               #1f1f2e;
+  --input:                #1f1f2e;
+  --ring:                 #00f0ff;
+}
+
+   /* [data-theme="dark"] {
   --background:           #0a0a0a;
   --foreground:           #ededed;
   --card:                 #18181b;
@@ -86,12 +132,34 @@
   --border:               #27272a;
   --input:                #27272a;
   --ring:                 #3b82f6;
-}
+} */
 
 /* ═══════════════════════════════════════════════════════════
    TEMA: Midnight
    ═══════════════════════════════════════════════════════════ */
 [data-theme="midnight"] {
+  --background:           #050014; /* Púrpura/azul abismal */
+  --foreground:           #d8b4fe; /* Lavanda claro cibernético */
+  --card:                 #0f0524;
+  --card-foreground:      #e9d5ff;
+  --primary:              #ff00c8; /* Fucsia neón agresivo */
+  --primary-foreground:   #ffffff;
+  --secondary:            #2e1065;
+  --secondary-foreground: #d8b4fe;
+  --muted:                #170f38;
+  --muted-foreground:     #7c3aed;
+  --accent:               #7000ff; /* Púrpura eléctrico */
+  --accent-foreground:    #ffffff;
+  --destructive:          #f43f5e;
+  --success:              #00ff41; /* Verde puro estilo Terminal/Matrix */
+  --warning:              #fde047;
+  --error:                #f43f5e;
+  --border:               #2e1065;
+  --input:                #2e1065;
+  --ring:                 #ff00c8;
+}
+
+   /* [data-theme="midnight"] {
   --background:           #0f172a;
   --foreground:           #cbd5e1;
   --card:                 #1e293b;
@@ -111,7 +179,7 @@
   --border:               #334155;
   --input:                #334155;
   --ring:                 #6366f1;
-}
+} */
 
 /* ═══════════════════════════════════════════════════════════
    BASE STYLES

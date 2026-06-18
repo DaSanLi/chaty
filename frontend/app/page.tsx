@@ -60,6 +60,7 @@ export default function Home() {
             Documentation
           </a>
         </div>
+        <ThemeSwitcherComponent />
       </main>
     </div>
   );
